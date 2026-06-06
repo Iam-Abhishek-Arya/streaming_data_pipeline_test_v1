@@ -1,0 +1,47 @@
+name: Generate PR Report
+
+on:
+  pull_request:
+    types: [opened, edited, ready_for_review]
+
+jobs:
+  pr-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Extract PR Metadata
+        run: |
+          echo "DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_ENV
+          echo "DEVELOPER=${{ github.event.pull_request.user.login }}" >> $GITHUB_ENV
+          echo "REVIEWERS=$(jq -r '.pull_request.requested_reviewers[].login' <<< '${{ toJson(github.event) }}' | paste -sd ',')" >> $GITHUB_ENV
+          
+          BODY="${{ github.event.pull_request.body }}"
+          BRD_LINK=$(echo "$BODY" | grep -oP '(?<=BRD Link: ).*')
+          EVIDENCE_LINK=$(echo "$BODY" | grep -oP '(?<=Evidence Link: ).*')
+
+          echo "BRD_LINK=$BRD_LINK" >> $GITHUB_ENV
+          echo "EVIDENCE_LINK=$EVIDENCE_LINK" >> $GITHUB_ENV
+
+      - name: Append PR Report Entry
+        run: |
+          {
+            echo "## PR #${{ github.event.pull_request.number }}"
+            echo "- **Date**: ${{ env.DATE }}"
+            echo "- **Developer**: ${{ env.DEVELOPER }}"
+            echo "- **Reviewers**: ${{ env.REVIEWERS }}"
+            echo "- **BRD Link**: ${{ env.BRD_LINK }}"
+            echo "- **Evidence Link**: ${{ env.EVIDENCE_LINK }}"
+            echo ""
+          } >> PR_REPORTS.md
+
+      - name: Commit PR Report
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add PR_REPORTS.md
+          git commit -m "Append PR #${{ github.event.pull_request.number }} report"
+          git push
